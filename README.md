@@ -35,3 +35,16 @@ Files of interest
 If you want, I can also:
 - Implement additional Pd externals installation instructions for your platform.
 - Generate example sample `.wav` files or wire up a small TTS script to produce `samples/voice_*.wav` cues.
+
+Verifier CLI
+------------
+
+Run the friendly verifier to exercise the OSC endpoints and (optionally) start Pd. It will send a few `/progress` updates and one-shot cues so you can confirm audio behavior.
+
+```powershell
+python src/verify.py
+python src/verify.py --no-pd
+python src/verify.py --pd "C:\\Program Files\\Pd\\pd.exe"
+```
+
+If Pd is available and the patch is loaded, you should hear gentle test notes and cues during the run.

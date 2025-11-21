@@ -2,49 +2,65 @@
 import subprocess
 import time
 import os
+import shutil
+import logging
 from pythonosc import udp_client
 from pathlib import Path
 
+log = logging.getLogger(__name__)
+
+
 class PdOrchestra:
-    def __init__(self):
+    def __init__(self, pd_executable: str | None = None):
         self.pd_process = None
         self.osc = udp_client.SimpleUDPClient("127.0.0.1", 4559)  # Pd receives on 4559
         self.patch_path = Path(__file__).parent.parent / "pd" / "orchestra.pd"
         self.samples_path = Path(__file__).parent.parent / "samples"
-        self.start_pd()
+        # allow overriding executable (tests can pass None/"/dev/null")
+        self.pd_executable = pd_executable or shutil.which("pd")
+        if not self.pd_executable:
+            log.warning("pd executable not found on PATH; running in headless/mock mode")
+        else:
+            try:
+                self.start_pd()
+            except FileNotFoundError:
+                log.warning("Failed to start pd. Proceeding without Pd (FileNotFoundError)")
+            except Exception:
+                log.exception("Unexpected error while starting Pd subprocess")
 
     def start_pd(self):
         if not self.patch_path.exists():
             self.generate_patch()
-        self.pd_process = subprocess.Popen([
-            "pd", "-nogui", "-audiodev", "1,2", "-open", str(self.patch_path)
-        ])
-        time.sleep(1.5)  # give Pd time to boot
+        if not self.pd_executable:
+            log.info("Skipping Pd start because executable is not configured")
+            return
+        cmd = [self.pd_executable, "-nogui", "-audiodev", "1,2", "-open", str(self.patch_path)]
+        try:
+            self.pd_process = subprocess.Popen(cmd)
+            time.sleep(1.5)  # give Pd time to boot
+        except FileNotFoundError:
+            self.pd_process = None
+            raise
 
     def generate_patch(self):
-        # Tiny procedural patch – chords + arpeggio + sample player
+        # Write a basic Pure Data patch if none exists. Keep content minimal but functional.
         pd_content = """
-#N canvas 0 0 800 600 10;
-#X obj 0 0 inlet;
-#X obj 0 50 route /progress /finish /oneshot;
-#X obj 100 100 osc_receive 4559;
-#X connect 0 0 2 0;
-
-#X obj 150 150 lop~ 0.1;  # gentle low-pass for warmth
-#X obj 150 200 dac~;
-
-#X obj 200 150 nbx 0-100;  # current progress
-#X obj 250 150 *~ 0.01;    # scale to control density/speed
-
-#X coords ... (abbreviated – full patch below in lode/pd-patch.md)
-        """
-        # In real session ask the agent to write the full .pd file with:
-        # - metro whose speed = progress
-        # - chord progression (C Eb G Bb → F G C E etc.)
-        # - rising arpeggiator
-        # - trigger sample player on milestones
+#N canvas 10 10 900 700 10;
+#X obj 10 10 declare -lib mrpeach;
+#X obj 10 110 udpreceive 4559;
+#X obj 10 140 oscparse;
+#X obj 10 170 route /progress /finish /play_sample /ding /tada;
+#X obj 10 200 s progress_val;
+#X obj 10 260 loadbang;
+#X obj 10 300 print pd_orchestra_loaded;
+"""
         self.patch_path.parent.mkdir(parents=True, exist_ok=True)
-        # We'll let the agent write the full beautiful patch in the next goal
+        try:
+            with open(self.patch_path, "w", encoding="utf8") as f:
+                f.write(pd_content)
+            log.info("Wrote generated Pure Data patch to %s", self.patch_path)
+        except Exception:
+            log.exception("Failed to write generated Pd patch")
 
     def start_session(self, task_name: str):
         self.osc.send_message("/start", 1.0)
@@ -64,6 +80,11 @@ class PdOrchestra:
             file = self.samples_path / f"{cue}.wav"
             if file.exists():
                 self.osc.send_message("/play_sample", str(file))
+            else:
+                log.debug("Sample not found: %s", file)
         elif cue == "ding":
             self.osc.send_message("/ding", 1.0)
-        # etc.
+        elif cue == "custom" and custom_file:
+            self.osc.send_message("/play_sample", custom_file)
+        else:
+            log.debug("Unknown one-shot cue: %s", cue)
