@@ -1,0 +1,52 @@
+// manifest.json
+{
+  "name": "Sound Orchestra",
+  "description": "Musical progress feedback for agentic coding – turns waiting into a friendly soundtrack",
+  "version": "0.1.0",
+  "tools": [
+    {
+      "name": "start_progress_music",
+      "description": "Start a new musical progress session (intro phase)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_name": { "type": "string", "description": "Optional name of the build/task" }
+        }
+      }
+    },
+    {
+      "name": "update_progress",
+      "description": "Update progress 0-100. Music evolves accordingly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+          "message": { "type": "string", "description": "Optional status message" }
+        },
+        "required": ["percent"]
+      }
+    },
+    {
+      "name": "finish_progress",
+      "description": "End the session with a triumphant resolve",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "default": true }
+        }
+      }
+    },
+    {
+      "name": "play_one_shot",
+      "description": "Play a single sound or voice cue immediately",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cue": { "type": "string", "enum": ["ding", "tada", "voice_20", "voice_50", "voice_100", "custom"] },
+          "file": { "type": "string", "description": "Path to custom .wav if cue=custom" }
+        },
+        "required": ["cue"]
+      }
+    }
+  ]
+}

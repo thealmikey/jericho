@@ -1,0 +1,103 @@
+#N canvas 10 10 900 700 10;
+#X obj 10 10 declare -lib mrpeach;
+#X msg 10 40 ; pd dsp 1;
+#X obj 10 70; # placeholder inlet for patch loading
+
+# --- OSC receiver (mrpeach)
+#X obj 10 110 udpreceive 4559;
+#X obj 10 140 oscparse;
+#X obj 10 170 route /progress /finish /play_sample /ding /tada;
+
+# --- Progress handling: map 0-100 -> arpeggiator speed & arpeggio density
+#X obj 300 110 r progress_val;
+#X obj 300 140 f 0; # store progress
+
+# route outputs: /progress -> left outlet (float), /finish -> int, /play_sample -> symbol, /ding /tada
+# connections
+#X connect 4 0 5 0;
+#X connect 5 0 6 0;
+
+#X obj 10 220 t b f; # break osc words into type + numbers
+
+# --- Simple chord generator (lofi Rhodes style)
+# chord metro driven by base tempo (70 bpm) scaled by progress slightly
+#X obj 10 260 metro 857; # base interval ~70 bpm (60000/70=857 ms)
+#X obj 100 260 t b b;
+#X obj 10 300 bang~;
+
+# We'll trigger a chord envelope for 3 sine partials (Cmaj7 shape approximated)
+#X obj 200 260 loadbang;
+# table of base frequencies (C4=261.63)
+#X msg 200 290 261.63 329.63 392.00 493.88; # C E G B
+
+# Oscillators for chord (simple warm sines + lop~ + reverb)
+#X obj 200 320 osc~ 261.63;
+#X obj 260 320 osc~ 329.63;
+#X obj 320 320 osc~ 392.00;
+#X obj 380 320 *~ 0.15;
+#X obj 200 350 *~ 0.15;
+#X obj 260 350 *~ 0.12;
+#X obj 320 350 *~ 0.10;
+#X obj 200 380 +~;
+#X obj 260 380 +~;
+#X obj 200 410 lop~ 6000;
+#X obj 200 440 freeverb~ 0.4 0.6 0.5;
+#X obj 200 480 dac~;
+
+# --- Arpeggiator: uses a separate metro with speed mapped from /progress
+# map progress 0-100 -> arpeggio rate 0.5Hz -> 16Hz (roughly)
+#X obj 10 520 r progress_map;
+#X obj 10 550 expr 500 - ($f1 * 4); # derive ms interval (fast at high progress)
+#X obj 120 550 metro 500; # placeholder, will be set by line
+#X obj 120 580 t b b;
+#X obj 120 610 makenote 60 100 200; # for arpeggio notes
+
+# Arpeggio voice (simple triangle-ish via phasor+lop)
+#X obj 340 520 phasor~ 4;
+#X obj 340 550 *~ 100; # scale freq
+#X obj 340 580 vline~;
+
+# --- Finish handling: /finish 1 -> triumphant resolve, 0 -> sad minor
+#X obj 10 650 t b b;
+#X obj 10 680 route 1 0; # if 1 success, if 0 failure
+#X msg 150 680 1; # trigger success melody
+#X msg 200 680 0; # trigger failure melody
+
+# --- Sample player using readsf~ (plays absolute path strings received)
+#X obj 520 110 symbol;
+#X obj 520 140 open $1;
+#X obj 520 170 readsf~ 2;
+#X obj 520 200 start 1;
+
+# connections: wire oscparse -> route
+#X connect 4 0 5 0;
+#X connect 5 0 6 0;
+
+# connect route outlets to handlers (indexes assume route created with 6 outlets)
+# progress (first outlet) -> set progress value and broadcast
+#X obj 10 200 pack f;
+#X connect 6 0 11 0;
+
+# simplified: route /progress -> set progress_val receive
+# This patch uses message forwarding: send /progress value to [s progress_val]
+#X obj 10 200 s progress_val;
+# connect route's progress outlet to this sender
+#X connect 6 0 12 0;
+
+# When /progress updates, update arpeggio metro speed and increase density
+# We'll use [r progress_val] to receive numbers and map them to two controls.
+#X connect 12 0 9 0;
+
+# play_sample: route outlet -> symbol -> [open( -> [readsf~] -> [start 1(
+# connect route play_sample outlet (assumed outlet 2) to the symbol
+#X connect 6 2 13 0;
+#X connect 13 0 14 0;
+#X connect 14 0 15 0;
+#X connect 15 0 16 0;
+
+# ding/tada simple triggers (use short internal synth)
+#X obj 520 240 bang;
+#X connect 6 3 18 0;
+
+# NOTE: This patch relies on mrpeach's `oscparse` and `route` objects to parse incoming OSC.
+# The implementation focuses on wiring and mapping; tune oscillator voicing and envelopes in Pd.
